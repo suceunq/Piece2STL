@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$version = "0.3.1"
+$version = "0.4.0"
 $source = $PSScriptRoot
 $sourceExe = Join-Path $source "Piece2STL.exe"
 if (-not (Test-Path $sourceExe)) {

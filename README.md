@@ -1,6 +1,6 @@
 # Piece2STL
 
-**Version 0.3.1 — photogrammétrie, IA locale multi-GPU et Meshy Cloud facultatif**
+**Version 0.4.0 — photogrammétrie, IA locale gratuite et Meshy Cloud facultatif**
 
 Piece2STL transforme une série de photos ou une courte vidéo d'un objet réel en
 maillage 3D calibré, contrôlé et exportable en STL/3MF. Les calculs restent sur
@@ -15,7 +15,7 @@ et avec la clé de l'utilisateur ; les autres modes restent entièrement locaux.
 
 ### Installateur Windows recommandé
 
-Lance `dist/installer/Piece2STL-Setup-0.3.1.exe`. L'assistant moderne installe
+Lance `dist/installer/Piece2STL-Setup-0.4.0.exe`. L'assistant moderne installe
 l'application sans droits administrateur, crée les raccourcis Bureau et Menu
 Démarrer et propose de lancer le logiciel à la fin. La version portable reste
 disponible dans `dist/Piece2STL/`.
@@ -112,13 +112,25 @@ invisibles restent difficiles à reconstruire par photogrammétrie.
 | `mesh_report.json` | Dimensions et contrôles topologiques |
 | `mesh_repaired.ply` | Réparation conservée séparément |
 | `repair_report.json` | Comparaison avant/après réparation |
-| `export_unscaled.stl` | Export sans dimension réelle |
+| `export_estimated_mm.stl` | Export en millimètres, taille initiale estimée à 100 mm |
+| `unit_scale_report.json` | Conversion appliquée et dimensions en millimètres |
 | `export_scaled_mm.stl` | Export final calibré en millimètres |
 | `mesh_report_scaled.json` | Contrôle du modèle final |
 
 Un maillage est marqué imprimable lorsque le contrôle confirme son étanchéité,
 la cohérence des faces et un volume valide. Cela ne remplace pas la vérification
 des tolérances mécaniques ni l'aperçu du logiciel de tranchage.
+
+Tous les maillages générés et tous les exports sont exprimés en millimètres.
+Lorsqu'une photo ne fournit aucune dimension réelle, Piece2STL fixe la plus
+grande dimension initiale à 100 mm, puis permet une calibration exacte par deux
+points. Les imports déclarés en pouces, mètres ou centimètres sont convertis en
+mm ; les STL sans métadonnée sont interprétés selon la convention millimétrique.
+
+Le moteur par défaut **TripoSR + BiRefNet** est local, open source et gratuit.
+Meshy 6 reste une option cloud distincte ; l'application explique les clés et
+crédits avant utilisation et propose automatiquement le moteur local lorsqu'une
+clé Meshy n'est pas configurée.
 
 ## Installation de développement
 

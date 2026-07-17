@@ -15,7 +15,7 @@ def is_watertight(mesh: trimesh.Trimesh) -> bool:
 
 
 def export_mesh(mesh: trimesh.Trimesh, output_path: Path) -> Path:
-    """Exporte au format déduit de l'extension (.stl ou .3mf)."""
+    """Exporte la géométrie, exprimée en millimètres dans Piece2STL."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     mesh.export(str(output_path))
     return output_path

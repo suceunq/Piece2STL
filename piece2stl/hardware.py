@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import ctypes
+from functools import lru_cache
 import json
 import os
 from pathlib import Path
@@ -156,9 +157,97 @@ def analyze_hardware() -> HardwareReport:
     return HardwareReport(cpu, round(total_ram, 1), gpus, level, title, tuple(details))
 
 
-def sample_performance(gpu: GPUInfo | None = None) -> dict[str, str]:
+def _valid_temperature(value: float) -> float | None:
+    return value if 0.0 < value < 150.0 else None
+
+
+def _parse_temperature_text(text: str) -> float | None:
+    patterns = (
+        r'"(?:temperature|edge|junction|hotspot)[^"]*"\s*:\s*"?(-?\d+(?:\.\d+)?)',
+        r"(?:temperature|edge|junction|hotspot)[^\d-]{0,40}(-?\d+(?:\.\d+)?)\s*°?c?",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+            value = _valid_temperature(float(match.group(1)))
+            if value is not None:
+                return value
+    return None
+
+
+@lru_cache(maxsize=1)
+def _find_amd_smi() -> str | None:
+    executable = shutil_which("amd-smi") or shutil_which("amd-smi.exe")
+    if executable:
+        return executable
+    roots = [Path(r"C:\Program Files\AMD\ROCm"), Path(r"C:\Program Files\AMD")]
+    for root in roots:
+        if root.is_dir():
+            try:
+                return str(next(root.glob("**/amd-smi.exe")))
+            except StopIteration:
+                pass
+    return None
+
+
+def _query_amd_temperature() -> float | None:
+    executable = _find_amd_smi()
+    if not executable:
+        return None
+    commands = (
+        [executable, "monitor", "--temperature", "--json"],
+        [executable, "--rocm-smi"],
+    )
+    for command in commands:
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                errors="replace",
+                timeout=6,
+                **hidden_process_kwargs(),
+            )
+            value = _parse_temperature_text(completed.stdout)
+            if completed.returncode == 0 and value is not None:
+                return value
+        except Exception:
+            continue
+    return None
+
+
+def _query_monitor_provider_temperature() -> float | None:
+    """Utilise Libre/OpenHardwareMonitor lorsqu'un fournisseur WMI est actif."""
+    if sys.platform != "win32":
+        return None
+    script = (
+        "$namespaces=@('root/LibreHardwareMonitor','root/OpenHardwareMonitor');"
+        "foreach($ns in $namespaces){try{$s=Get-CimInstance -Namespace $ns -ClassName Sensor -ErrorAction Stop | "
+        "Where-Object {$_.SensorType -eq 'Temperature' -and ($_.Name -match 'GPU|Core|Hot Spot|Junction')} | "
+        "Select-Object -First 1;if($s){Write-Output $s.Value;exit 0}}catch{}};exit 1"
+    )
+    try:
+        completed = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=6,
+            **hidden_process_kwargs(),
+        )
+        if completed.returncode == 0:
+            return _valid_temperature(float(completed.stdout.strip().replace(",", ".")))
+    except Exception:
+        pass
+    return None
+
+
+def sample_performance(gpu: GPUInfo | None = None) -> dict[str, str | None]:
     total, used, _ = memory_status()
-    result = {"ram": f"{used:.1f} / {total:.1f} Go", "gpu": "—", "vram": "—", "temperature": "—"}
+    result: dict[str, str | None] = {
+        "ram": f"{used:.1f} / {total:.1f} Go",
+        "gpu": "—",
+        "vram": "—",
+        "temperature": None,
+    }
     if gpu:
         result["vram"] = f"— / {gpu.vram_gb:.1f} Go" if gpu.vram_gb else "—"
     executable = shutil_which("nvidia-smi")
@@ -169,7 +258,12 @@ def sample_performance(gpu: GPUInfo | None = None) -> dict[str, str]:
                 capture_output=True, text=True, timeout=5, **hidden_process_kwargs(),
             )
             load, mem_used, mem_total, temp = [value.strip() for value in completed.stdout.splitlines()[0].split(",")]
-            result.update(gpu=f"{load} %", vram=f"{int(mem_used)/1024:.1f} / {int(mem_total)/1024:.1f} Go", temperature=f"{temp} °C")
+            temperature = _valid_temperature(float(temp))
+            result.update(
+                gpu=f"{load} %",
+                vram=f"{int(mem_used)/1024:.1f} / {int(mem_total)/1024:.1f} Go",
+                temperature=f"{temperature:g} °C" if temperature is not None else None,
+            )
         except Exception:
             pass
     elif gpu and sys.platform == "win32":
@@ -193,6 +287,10 @@ def sample_performance(gpu: GPUInfo | None = None) -> dict[str, str]:
             result["vram"] = f"{float(memory):.1f} / {gpu.vram_gb:.1f} Go"
         except Exception:
             pass
+        temperature = _query_amd_temperature() if gpu.vendor == "AMD" else None
+        temperature = temperature or _query_monitor_provider_temperature()
+        if temperature is not None:
+            result["temperature"] = f"{temperature:g} °C"
     return result
 
 

@@ -83,7 +83,7 @@ class MeshyClient:
                 "should_remesh": True,
                 "target_polycount": 100000,
                 "moderation": True,
-                "target_formats": ["glb", "stl"],
+                "target_formats": ["glb"],
             },
         )
         task_id = result.get("result")

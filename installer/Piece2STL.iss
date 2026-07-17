@@ -1,5 +1,5 @@
 #define MyAppName "Piece2STL"
-#define MyAppVersion "0.3.1"
+#define MyAppVersion "0.4.0"
 #define MyAppPublisher "Piece2STL"
 #define MyAppExeName "Piece2STL.exe"
 

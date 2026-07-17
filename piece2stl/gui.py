@@ -65,6 +65,11 @@ from .pipeline.mesh_repair import RepairParams, repair_mesh, save_repair_report
 from .pipeline.process import CancellationError, hidden_process_kwargs
 from .pipeline.run_pipeline import reconstruct
 from .pipeline.scale import apply_scale, scale_factor_from_two_points
+from .pipeline.units import (
+    convert_declared_units_to_mm,
+    normalize_generated_mesh_to_mm,
+    save_unit_scale_report,
+)
 
 
 class ReconstructionWorker(QThread):
@@ -140,7 +145,11 @@ class ReconstructionWorker(QThread):
                 progress=self.progress_changed.emit,
             )
             mesh = load_mesh(mesh_path)
-            stl_path = export_mesh(mesh, self.run_dir / "export_unscaled.stl")
+            mesh, unit_report = normalize_generated_mesh_to_mm(mesh)
+            mesh_path = export_mesh(mesh, self.run_dir / "mesh_generated_mm.ply")
+            save_unit_scale_report(unit_report, self.run_dir / "unit_scale_report.json")
+            stl_path = export_mesh(mesh, self.run_dir / "export_estimated_mm.stl")
+            export_mesh(mesh, self.run_dir / "export_unscaled.stl")
             report = inspect_mesh(mesh)
             save_report(report, self.run_dir / "mesh_report.json")
             self.completed.emit(stl_path, report, mesh_path)
@@ -231,9 +240,13 @@ class AIWorker(QThread):
             )
             self.progress_changed.emit(92, "Contrôle du maillage généré")
             mesh = load_mesh(output_path)
+            mesh, unit_report = normalize_generated_mesh_to_mm(mesh)
+            export_mesh(mesh, output_path)
+            save_unit_scale_report(unit_report, self.run_dir / "unit_scale_report.json")
             report = inspect_mesh(mesh)
             save_report(report, self.run_dir / "mesh_report.json")
-            stl_path = export_mesh(mesh, self.run_dir / "export_unscaled.stl")
+            stl_path = export_mesh(mesh, self.run_dir / "export_estimated_mm.stl")
+            export_mesh(mesh, self.run_dir / "export_unscaled.stl")
             try:
                 textured_path = export_mesh(mesh, self.run_dir / "export_textured.glb")
                 self.log_line.emit(f"Modèle coloré GLB : {textured_path}")
@@ -284,9 +297,6 @@ class MeshyWorker(QThread):
                 raise RuntimeError("Meshy n’a fourni aucun modèle GLB texturé.")
             self.progress_changed.emit(85, "Téléchargement du modèle texturé")
             glb_path = client.download(glb_url, self.run_dir / "export_textured.glb")
-            if urls.get("stl"):
-                client.download(urls["stl"], self.run_dir / "meshy_original.stl")
-
             self.progress_changed.emit(90, "Préparation du maillage pour l’impression")
             raw_path = self.run_dir / "mesh_meshy_raw.ply"
             mesh = load_mesh(glb_path)
@@ -299,9 +309,19 @@ class MeshyWorker(QThread):
             post_report = optimize_ai_mesh(raw_path, output_path)
             save_ai_postprocess_report(post_report, self.run_dir / "ai_postprocess_report.json")
             cleaned = load_mesh(output_path)
+            cleaned, unit_report = normalize_generated_mesh_to_mm(cleaned)
+            export_mesh(cleaned, output_path)
+            save_unit_scale_report(unit_report, self.run_dir / "unit_scale_report.json")
+            try:
+                textured_mm = load_mesh(glb_path)
+                textured_mm, _ = normalize_generated_mesh_to_mm(textured_mm)
+                export_mesh(textured_mm, glb_path)
+            except Exception as exc:
+                self.log_line.emit(f"Normalisation du GLB texturé non disponible : {exc}")
             report = inspect_mesh(cleaned)
             save_report(report, self.run_dir / "mesh_report.json")
-            stl_path = export_mesh(cleaned, self.run_dir / "export_unscaled.stl")
+            stl_path = export_mesh(cleaned, self.run_dir / "export_estimated_mm.stl")
+            export_mesh(cleaned, self.run_dir / "export_unscaled.stl")
             self.progress_changed.emit(100, "Génération Meshy terminée")
             self.completed.emit(stl_path, report, output_path)
         except InterruptedError:
@@ -570,7 +590,7 @@ class MainWindow(QMainWindow):
         self.source_cards_layout.setVerticalSpacing(10)
         self.photos_radio = QRadioButton("  📷  Dossier de photos\n       Précision maximale avec plusieurs vues")
         self.video_radio = QRadioButton("  🎬  Vidéo\n       Extraction automatique des meilleures vues")
-        self.ai_radio = QRadioButton("  ◆  Photo unique — IA locale\n       Privé, hors ligne, AMD / NVIDIA / Intel")
+        self.ai_radio = QRadioButton("  ◆  Photo unique — IA locale gratuite\n       Open source, hors ligne, AMD / NVIDIA / Intel")
         self.meshy_radio = QRadioButton("  ☁  Photo unique — Meshy Cloud\n       Qualité supérieure via votre clé API")
         self.photos_radio.setChecked(True)
         self.source_group = QButtonGroup(self)
@@ -774,12 +794,14 @@ class MainWindow(QMainWindow):
         self.gpu_load_label = QLabel("GPU : —")
         self.vram_label = QLabel("VRAM : —")
         self.temperature_label = QLabel("Température : —")
+        self.temperature_label.setVisible(False)
         self.ram_label = QLabel("Mémoire : —")
         for index, widget in enumerate(
             (self.gpu_load_label, self.vram_label, self.temperature_label, self.ram_label)
         ):
             widget.setObjectName("metricPill")
             performance_layout.addWidget(widget, 1, index)
+            performance_layout.setColumnStretch(index, 1)
         layout.addWidget(self.performance_box)
 
         preview_box = QGroupBox("3. Aperçu et dimensions")
@@ -797,7 +819,7 @@ class MainWindow(QMainWindow):
         self.preview.setMinimumHeight(310)
         self.preview.set_background("#20252b")
         preview_layout.addWidget(self.preview.interactor)
-        self.dimensions_label = QLabel("Dimensions : disponibles après reconstruction")
+        self.dimensions_label = QLabel("Dimensions en mm : disponibles après reconstruction")
         preview_layout.addWidget(self.dimensions_label)
         layout.addWidget(preview_box, 2)
 
@@ -816,6 +838,9 @@ class MainWindow(QMainWindow):
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
         tools_menu = self.menuBar().addMenu("Outils")
+        engines_action = QAction("Paramètres des moteurs IA…", self)
+        engines_action.triggered.connect(self._show_engine_settings)
+        tools_menu.addAction(engines_action)
         hardware_action = QAction("Analyser mon matériel…", self)
         hardware_action.triggered.connect(self._show_hardware_scan)
         tools_menu.addAction(hardware_action)
@@ -927,7 +952,10 @@ class MainWindow(QMainWindow):
     def _update_performance(self, values: dict) -> None:
         self.gpu_load_label.setText(f"GPU : {values['gpu']}")
         self.vram_label.setText(f"VRAM : {values['vram']}")
-        self.temperature_label.setText(f"Température : {values['temperature']}")
+        temperature = values.get("temperature")
+        self.temperature_label.setVisible(bool(temperature))
+        if temperature:
+            self.temperature_label.setText(f"Température : {temperature}")
         self.ram_label.setText(f"Mémoire : {values['ram']}")
 
     def _show_hardware_scan(self) -> None:
@@ -940,6 +968,57 @@ class MainWindow(QMainWindow):
             f"<b>Piece2STL {__version__}</b><br><br>Photos et images vers des modèles 3D imprimables, "
             "avec calcul local AMD, NVIDIA et Intel ou génération Meshy Cloud facultative.",
         )
+
+    def _show_engine_settings(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Moteur de génération 3D")
+        dialog.setMinimumWidth(620)
+        form = QVBoxLayout(dialog)
+        title = QLabel("Choisir le moteur pour une photo unique")
+        title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        form.addWidget(title)
+        combo = QComboBox()
+        combo.addItem("TripoSR + BiRefNet — local, open source et gratuit", "local")
+        combo.addItem("Meshy 6 — cloud, compte et crédits/clé API", "meshy")
+        saved_engine = QSettings().value("generation/defaultEngine", "local")
+        current_engine = (
+            "meshy" if self.meshy_radio.isChecked() else (
+                "local" if self.ai_radio.isChecked() else saved_engine
+            )
+        )
+        combo.setCurrentIndex(1 if current_engine == "meshy" else 0)
+        form.addWidget(combo)
+        description = QLabel()
+        description.setWordWrap(True)
+        description.setObjectName("mutedText")
+        form.addWidget(description)
+
+        def update_description() -> None:
+            if combo.currentData() == "local":
+                description.setText(
+                    "Moteur recommandé par défaut : aucun abonnement, aucune clé et aucune image envoyée. "
+                    "Il fonctionne avec AMD ROCm, NVIDIA CUDA, Intel XPU ou le mode CPU de secours."
+                )
+            else:
+                description.setText(
+                    "Option facultative en ligne : l’image est envoyée à Meshy uniquement après confirmation. "
+                    "Une clé et des crédits peuvent être nécessaires selon l’offre Meshy."
+                )
+
+        combo.currentIndexChanged.connect(update_description)
+        update_description()
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addWidget(buttons)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            if combo.currentData() == "local":
+                self.ai_radio.setChecked(True)
+            else:
+                self.meshy_radio.setChecked(True)
+            QSettings().setValue("generation/defaultEngine", combo.currentData())
 
     def _check_updates(self, *, manual: bool) -> None:
         if self.update_worker and self.update_worker.isRunning():
@@ -1012,13 +1091,22 @@ class MainWindow(QMainWindow):
         )
 
     def _update_source_hint(self) -> None:
-        self.source_edit.clear()
+        current_source = Path(self.source_edit.text().strip())
         if self.photos_radio.isChecked():
             hint = "Sélectionnez un dossier contenant les photos"
+            keep_source = current_source.is_dir()
         elif self.ai_radio.isChecked() or self.meshy_radio.isChecked():
             hint = "Sélectionnez une photo claire de l’objet"
+            keep_source = current_source.is_file() and current_source.suffix.lower() in {
+                ".jpg", ".jpeg", ".png", ".webp"
+            }
         else:
             hint = "Sélectionnez une vidéo"
+            keep_source = current_source.is_file() and current_source.suffix.lower() in {
+                ".mp4", ".mov", ".avi", ".mkv"
+            }
+        if not keep_source:
+            self.source_edit.clear()
         self.source_edit.setPlaceholderText(hint)
         self.frames_spin.setEnabled(self.video_radio.isChecked())
         single_image = self.ai_radio.isChecked() or self.meshy_radio.isChecked()
@@ -1067,8 +1155,6 @@ class MainWindow(QMainWindow):
                 ".jpg", ".jpeg", ".png", ".webp"
             }:
                 errors.append("Choisissez une image JPG, JPEG, PNG ou WebP valide.")
-            if cloud_mode and not self.meshy_key_edit.text().strip():
-                errors.append("Saisissez votre clé API Meshy ou utilisez le lien pour en créer une.")
         else:
             errors = validate_source(image_dir=image_dir, video_path=video_path)
         project_root_text = self.project_edit.text().strip()
@@ -1076,6 +1162,25 @@ class MainWindow(QMainWindow):
             errors.append("Choisissez un dossier de destination.")
         if errors:
             QMessageBox.warning(self, "Entrée incomplète", "\n".join(errors))
+            return
+
+        if cloud_mode and not self.meshy_key_edit.text().strip():
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Information)
+            box.setWindowTitle("Meshy n’est pas configuré — moteur gratuit disponible")
+            box.setText(
+                "Meshy Cloud nécessite une clé API et peut consommer des crédits.\n\n"
+                "Vous pouvez utiliser immédiatement TripoSR + BiRefNet en local : ce moteur est "
+                "open source, sans abonnement et n’envoie aucune image."
+            )
+            local_button = box.addButton(
+                "Utiliser l’IA locale gratuite", QMessageBox.ButtonRole.AcceptRole
+            )
+            box.addButton("Rester sur Meshy", QMessageBox.ButtonRole.RejectRole)
+            box.exec()
+            if box.clickedButton() == local_button:
+                self.ai_radio.setChecked(True)
+                self._start()
             return
 
         if cloud_mode:
@@ -1328,7 +1433,9 @@ class MainWindow(QMainWindow):
             scaled_output_path="",
             last_error="",
         )
-        export_mesh(load_mesh(result.output_path), result.output_path.with_name("export_repaired_unscaled.stl"))
+        repaired = load_mesh(result.output_path)
+        repaired.units = "mm"
+        export_mesh(repaired, result.output_path.with_name("export_repaired_mm.stl"))
         self._show_mesh(result.output_path)
         self._show_dimensions(result.after.dimensions, scaled=False)
         self.scale_button.setEnabled(True)
@@ -1396,7 +1503,15 @@ class MainWindow(QMainWindow):
             return
         try:
             mesh_path = Path(path).resolve()
-            load_mesh(mesh_path)
+            imported = load_mesh(mesh_path)
+            imported_mm, unit_report = convert_declared_units_to_mm(imported)
+            if unit_report.scale_factor != 1.0:
+                converted_path = mesh_path.with_name(mesh_path.stem + "_mm.ply")
+                export_mesh(imported_mm, converted_path)
+                save_unit_scale_report(
+                    unit_report, converted_path.with_name("unit_scale_report.json")
+                )
+                mesh_path = converted_path
             self.last_run_dir = mesh_path.parent
             self.project_state = new_project("mesh", mesh_path, mesh_path.parent)
             self.project_state = update_project(
@@ -1620,7 +1735,7 @@ class MainWindow(QMainWindow):
         self.preview_mode_label.setText("Affichage : aucun modèle")
         self.preview_mode_button.setText("Afficher le maillage brut")
         self.preview_mode_button.setEnabled(False)
-        self.dimensions_label.setText("Dimensions : disponibles après reconstruction")
+        self.dimensions_label.setText("Dimensions en mm : disponibles après reconstruction")
 
     def _show_mesh(self, path: Path | None) -> None:
         if not path or not path.exists():
@@ -1681,7 +1796,7 @@ class MainWindow(QMainWindow):
             self.preview.camera_position = camera
 
     def _show_dimensions(self, dimensions, *, scaled: bool) -> None:
-        unit = " mm" if scaled else " (unités non calibrées)"
+        unit = " mm" if scaled else " mm (taille estimée — à calibrer si nécessaire)"
         self.dimensions_label.setText(
             f"Dimensions X × Y × Z : {dimensions[0]:.2f} × "
             f"{dimensions[1]:.2f} × {dimensions[2]:.2f}{unit}"

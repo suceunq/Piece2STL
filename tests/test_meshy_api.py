@@ -51,4 +51,4 @@ def test_create_uses_meshi_6_quality_options(monkeypatch, tmp_path: Path):
     assert captured["payload"]["enable_pbr"] is True
     assert captured["payload"]["should_remesh"] is True
     assert captured["payload"]["target_polycount"] == 100000
-    assert captured["payload"]["target_formats"] == ["glb", "stl"]
+    assert captured["payload"]["target_formats"] == ["glb"]

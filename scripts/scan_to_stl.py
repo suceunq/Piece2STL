@@ -1,4 +1,4 @@
-"""CLI : photos ou vidéo d'une vraie pièce -> mesh nettoyé -> STL (non mis à l'échelle).
+"""CLI : photos ou vidéo -> maillage nettoyé -> STL en millimètres.
 
 Usage:
   python scripts/scan_to_stl.py --images real_data/ma_piece/images --workspace real_data/ma_piece/workspace
@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from piece2stl.pipeline.export import export_mesh, is_watertight, load_mesh
 from piece2stl.pipeline.frames import extract_frames, score_images
 from piece2stl.pipeline.run_pipeline import reconstruct
+from piece2stl.pipeline.units import normalize_generated_mesh_to_mm, save_unit_scale_report
 from piece2stl.inputs import list_images
 
 
@@ -72,7 +73,10 @@ def main() -> None:
     )
 
     mesh = load_mesh(cleaned_mesh_path)
-    print(f"\nMesh nettoyé : {cleaned_mesh_path}")
+    mesh, unit_report = normalize_generated_mesh_to_mm(mesh)
+    cleaned_mesh_path = export_mesh(mesh, workspace / "mesh_generated_mm.ply")
+    save_unit_scale_report(unit_report, workspace / "unit_scale_report.json")
+    print(f"\nMesh nettoyé en millimètres : {cleaned_mesh_path}")
     print(f"Sommets: {len(mesh.vertices)}, Faces: {len(mesh.faces)}")
     watertight = is_watertight(mesh)
     print(f"Watertight: {watertight}")
@@ -82,8 +86,8 @@ def main() -> None:
             "incomplète (angles manquants) ou une surface trop réfléchissante/transparente."
         )
 
-    stl_path = export_mesh(mesh, workspace / "export_unscaled.stl")
-    print(f"\nSTL exporté (PAS encore à l'échelle réelle) : {stl_path}")
+    stl_path = export_mesh(mesh, workspace / "export_estimated_mm.stl")
+    print(f"\nSTL exporté en mm (plus grande dimension estimée à 100 mm) : {stl_path}")
     print(f"Pour mettre à l'échelle : python scripts/pick_scale.py {cleaned_mesh_path}")
 
 

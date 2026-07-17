@@ -1,4 +1,22 @@
-# Piece2STL 0.3.1
+# Piece2STL 0.4.0
+
+## Monitoring et unités
+
+- température NVIDIA via `nvidia-smi` ;
+- température AMD via `amd-smi` lorsqu'il est installé, puis fournisseurs
+  LibreHardwareMonitor/OpenHardwareMonitor en solution complémentaire ;
+- indicateur de température automatiquement masqué si aucun capteur ne répond ;
+- géométrie, aperçu, dimensions et exports standardisés en millimètres ;
+- génération sans échelle initialisée à 100 mm sur sa plus grande dimension ;
+- conversion exacte pouces → mm (× 25,4), mètres → mm et centimètres → mm ;
+- rapport `unit_scale_report.json` conservé dans chaque projet.
+
+## Moteurs sans abonnement obligatoire
+
+- TripoSR + BiRefNet local clairement présenté comme moteur gratuit par défaut ;
+- Meshy 6 reste entièrement facultatif et signale compte, clé et crédits ;
+- choix persistant du moteur depuis `Outils > Paramètres des moteurs IA` ;
+- proposition directe du moteur local lorsqu'aucune clé Meshy n'est configurée.
 
 ## Correctif affichage 2K
 
