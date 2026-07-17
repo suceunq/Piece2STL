@@ -1,0 +1,9 @@
+omegaconf==2.3.0
+Pillow>=10.1,<13
+einops>=0.7,<1
+transformers>=4.35,<5
+trimesh>=4,<5
+rembg[cpu]>=2.0.60,<3
+huggingface-hub>=0.20,<2
+scikit-image>=0.23,<1
+numpy>=1.26,<3

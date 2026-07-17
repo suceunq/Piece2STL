@@ -1,0 +1,9 @@
+PySide6
+pyvista
+pyvistaqt
+pymeshlab==2025.7.post1
+trimesh
+lxml
+opencv-python
+numpy
+Pillow
