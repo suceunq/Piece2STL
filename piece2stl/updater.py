@@ -45,8 +45,20 @@ def check_for_update(current_version: str) -> UpdateInfo | None:
     if _version_tuple(version) <= _version_tuple(current_version):
         return None
     assets = release.get("assets") or []
-    installer = next((a for a in assets if a.get("name", "").lower().endswith("setup.exe")), None)
-    checksum = next((a for a in assets if a.get("name", "").lower().endswith("setup.exe.sha256")), None)
+    installer = next(
+        (
+            asset
+            for asset in assets
+            if asset.get("name", "").lower().startswith("piece2stl-setup")
+            and asset.get("name", "").lower().endswith(".exe")
+        ),
+        None,
+    )
+    checksum_name = (installer.get("name", "") + ".sha256").lower() if installer else ""
+    checksum = next(
+        (asset for asset in assets if asset.get("name", "").lower() == checksum_name),
+        None,
+    )
     if not installer or not checksum:
         raise RuntimeError("La Release ne contient pas l’installateur et sa somme SHA-256.")
     return UpdateInfo(version, str(release.get("body") or ""), installer["browser_download_url"], checksum["browser_download_url"])

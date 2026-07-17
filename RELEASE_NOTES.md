@@ -19,7 +19,7 @@
   officiel, consentement avant envoi, progression, GLB PBR et STL nettoyé ;
 - aucune clé API écrite dans les projets ou les journaux.
 
-Validation finale : 27 tests automatisés, détection réelle AMD Radeon RX 9060
+Validation finale : 28 tests automatisés, détection réelle AMD Radeon RX 9060
 XT 15,9 Go, génération locale réelle (101 330 sommets / 202 672 faces,
 étanche), trajet Meshy simulé complet, lancement portable et installation / 
 lancement / désinstallation dans un dossier isolé.
