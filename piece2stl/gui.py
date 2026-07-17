@@ -543,6 +543,7 @@ class MainWindow(QMainWindow):
 
         central = QWidget()
         layout = QVBoxLayout(central)
+        self.root_layout = layout
         layout.setContentsMargins(28, 24, 28, 24)
         layout.setSpacing(16)
 
@@ -562,10 +563,11 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.mode_label)
 
         source_box = QGroupBox("1. Source")
+        self.source_box = source_box
         source_layout = QVBoxLayout(source_box)
-        radio_row = QGridLayout()
-        radio_row.setHorizontalSpacing(12)
-        radio_row.setVerticalSpacing(10)
+        self.source_cards_layout = QGridLayout()
+        self.source_cards_layout.setHorizontalSpacing(12)
+        self.source_cards_layout.setVerticalSpacing(10)
         self.photos_radio = QRadioButton("  📷  Dossier de photos\n       Précision maximale avec plusieurs vues")
         self.video_radio = QRadioButton("  🎬  Vidéo\n       Extraction automatique des meilleures vues")
         self.ai_radio = QRadioButton("  ◆  Photo unique — IA locale\n       Privé, hors ligne, AMD / NVIDIA / Intel")
@@ -579,11 +581,12 @@ class MainWindow(QMainWindow):
         for button in (self.photos_radio, self.video_radio, self.ai_radio, self.meshy_radio):
             button.setObjectName("sourceChoice")
             button.setMinimumHeight(72)
-        radio_row.addWidget(self.photos_radio, 0, 0)
-        radio_row.addWidget(self.video_radio, 0, 1)
-        radio_row.addWidget(self.ai_radio, 1, 0)
-        radio_row.addWidget(self.meshy_radio, 1, 1)
-        source_layout.addLayout(radio_row)
+        self.source_cards_layout.addWidget(self.photos_radio, 0, 0)
+        self.source_cards_layout.addWidget(self.video_radio, 0, 1)
+        self.source_cards_layout.addWidget(self.ai_radio, 1, 0)
+        self.source_cards_layout.addWidget(self.meshy_radio, 1, 1)
+        source_layout.addLayout(self.source_cards_layout)
+        self._source_layout_mode = "medium"
 
         source_row = QHBoxLayout()
         self.source_edit = QLineEdit()
@@ -598,7 +601,6 @@ class MainWindow(QMainWindow):
         self.video_radio.toggled.connect(self._update_source_hint)
         self.ai_radio.toggled.connect(self._update_source_hint)
         self.meshy_radio.toggled.connect(self._update_source_hint)
-        layout.addWidget(source_box)
 
         self.meshy_box = QGroupBox("Connexion Meshy Cloud — facultative")
         meshy_form = QFormLayout(self.meshy_box)
@@ -629,9 +631,9 @@ class MainWindow(QMainWindow):
         cloud_note.setWordWrap(True)
         cloud_note.setObjectName("mutedText")
         meshy_form.addRow("Confidentialité", cloud_note)
-        layout.addWidget(self.meshy_box)
 
         project_box = QGroupBox("2. Destination")
+        self.project_box = project_box
         project_form = QFormLayout(project_box)
         project_row = QHBoxLayout()
         self.project_edit = QLineEdit(str(Path.home() / "Documents" / "Piece2STL"))
@@ -661,7 +663,15 @@ class MainWindow(QMainWindow):
             "Le mode automatique choisit la meilleure résolution sûre selon le GPU et sa mémoire."
         )
         project_form.addRow("Qualité IA", self.ai_quality_combo)
-        layout.addWidget(project_box)
+        self.configuration_container = QWidget()
+        self.configuration_layout = QGridLayout(self.configuration_container)
+        self.configuration_layout.setContentsMargins(0, 0, 0, 0)
+        self.configuration_layout.setSpacing(12)
+        self.configuration_layout.addWidget(self.source_box, 0, 0)
+        self.configuration_layout.addWidget(self.project_box, 1, 0)
+        self._configuration_side_by_side = False
+        layout.addWidget(self.configuration_container)
+        layout.addWidget(self.meshy_box)
 
         action_row = QHBoxLayout()
         self.start_button = QPushButton("Créer mon modèle 3D")
@@ -791,11 +801,11 @@ class MainWindow(QMainWindow):
         preview_layout.addWidget(self.dimensions_label)
         layout.addWidget(preview_box, 2)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        scroll.setWidget(central)
-        self.setCentralWidget(scroll)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
+        self.scroll_area.setWidget(central)
+        self.setCentralWidget(self.scroll_area)
 
         file_menu = self.menuBar().addMenu("Fichier")
         open_folder_action = QAction("Ouvrir le dernier résultat", self)
@@ -817,7 +827,71 @@ class MainWindow(QMainWindow):
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
         self._update_source_hint()
+        self._apply_responsive_layout(self.width(), self.height())
         QTimer.singleShot(2500, lambda: self._check_updates(manual=False))
+
+    def _apply_responsive_layout(self, width: int, height: int) -> None:
+        """Adapte densité et colonnes au moniteur actuellement utilisé."""
+        side_by_side = width >= 1450
+        if side_by_side != self._configuration_side_by_side:
+            self._configuration_side_by_side = side_by_side
+            self.configuration_layout.removeWidget(self.source_box)
+            self.configuration_layout.removeWidget(self.project_box)
+            self.configuration_layout.addWidget(self.source_box, 0, 0)
+            self.configuration_layout.addWidget(
+                self.project_box, 0 if side_by_side else 1, 1 if side_by_side else 0
+            )
+            self.configuration_layout.setColumnStretch(0, 3 if side_by_side else 1)
+            self.configuration_layout.setColumnStretch(1, 2 if side_by_side else 0)
+        mode = (
+            "wide"
+            if width >= 2200 or (1200 <= width < 1450)
+            else ("medium" if width >= 760 else "narrow")
+        )
+        if height < 850:
+            self.root_layout.setContentsMargins(10, 8, 10, 8)
+            self.root_layout.setSpacing(7)
+            if hasattr(self, "preview"):
+                self.preview.setMinimumHeight(190)
+        elif height < 1150:
+            self.root_layout.setContentsMargins(20, 18, 20, 18)
+            self.root_layout.setSpacing(12)
+            if hasattr(self, "preview"):
+                self.preview.setMinimumHeight(280)
+        else:
+            self.root_layout.setContentsMargins(28, 24, 28, 24)
+            self.root_layout.setSpacing(16)
+            if hasattr(self, "preview"):
+                self.preview.setMinimumHeight(340)
+        if mode == self._source_layout_mode:
+            return
+        self._source_layout_mode = mode
+        buttons = (
+            self.photos_radio,
+            self.video_radio,
+            self.ai_radio,
+            self.meshy_radio,
+        )
+        for button in buttons:
+            self.source_cards_layout.removeWidget(button)
+        if mode == "wide":
+            for column, button in enumerate(buttons):
+                self.source_cards_layout.addWidget(button, 0, column)
+                self.source_cards_layout.setColumnStretch(column, 1)
+                button.setMinimumHeight(62 if height < 850 else 68)
+        elif mode == "medium":
+            for index, button in enumerate(buttons):
+                self.source_cards_layout.addWidget(button, index // 2, index % 2)
+                button.setMinimumHeight(66 if height < 850 else 72)
+        else:
+            for row, button in enumerate(buttons):
+                self.source_cards_layout.addWidget(button, row, 0)
+                button.setMinimumHeight(62)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if hasattr(self, "source_cards_layout") and hasattr(self, "configuration_layout"):
+            self._apply_responsive_layout(event.size().width(), event.size().height())
 
     def _toggle_api_key_visibility(self, visible: bool) -> None:
         self.meshy_key_edit.setEchoMode(
@@ -950,7 +1024,10 @@ class MainWindow(QMainWindow):
         single_image = self.ai_radio.isChecked() or self.meshy_radio.isChecked()
         self.exclude_blurry_check.setEnabled(not single_image)
         self.ai_quality_combo.setEnabled(self.ai_radio.isChecked())
-        self.meshy_box.setEnabled(self.meshy_radio.isChecked())
+        self.meshy_box.setVisible(self.meshy_radio.isChecked())
+        # Le suivi matériel ne concerne que les calculs locaux. Le masquer en
+        # mode cloud libère la hauteur nécessaire à la configuration Meshy.
+        self.performance_box.setVisible(not self.meshy_radio.isChecked())
         self.mode_label.setText(
             "Mode Meshy Cloud : l’image est envoyée uniquement après votre confirmation."
             if self.meshy_radio.isChecked()
@@ -1625,6 +1702,9 @@ class MainWindow(QMainWindow):
 
 
 def main() -> int:
+    QApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+    )
     app = QApplication(sys.argv)
     app.setApplicationName("Piece2STL")
     app.setOrganizationName("Piece2STL")
@@ -1669,5 +1749,5 @@ def main() -> int:
     ):
         HardwareScanDialog(window).exec()
         settings.setValue("firstLaunch/hardwareScanComplete", True)
-    window.show()
+    window.showMaximized()
     return app.exec()

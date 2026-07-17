@@ -1,4 +1,18 @@
-# Piece2STL 0.3.0
+# Piece2STL 0.3.1
+
+## Correctif affichage 2K
+
+- démarrage automatiquement maximisé ;
+- source et destination placées côte à côte sur les écrans larges ;
+- quatre choix de source alignés sur une seule rangée lorsque leur largeur le permet ;
+- retour automatique à une grille 2 × 2 puis une colonne sur les petits écrans ;
+- marges, espacements et hauteur de l'aperçu adaptés à la hauteur disponible ;
+- prise en charge de la mise à l'échelle DPI et des changements de moniteur ;
+- panneau Meshy masqué tant que le mode cloud n'est pas sélectionné ;
+- panneau de performances locales masqué en mode Meshy pour préserver la hauteur ;
+- aperçu 3D et commandes entièrement accessibles en plein écran 2560 × 1440.
+
+## Version 0.3.0
 
 ## Expérience Windows professionnelle
 

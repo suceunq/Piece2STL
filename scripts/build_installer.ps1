@@ -18,7 +18,7 @@ if (-not $iscc) { throw "Inno Setup 6 est requis pour créer l'installateur." }
 & $iscc (Join-Path $root "installer\Piece2STL.iss")
 if ($LASTEXITCODE -ne 0) { throw "La création de l'installateur a échoué." }
 
-$installer = Get-Item (Join-Path $root "dist\installer\Piece2STL-Setup-0.3.0.exe")
+$installer = Get-Item (Join-Path $root "dist\installer\Piece2STL-Setup-0.3.1.exe")
 $hash = (Get-FileHash -Algorithm SHA256 $installer.FullName).Hash.ToLowerInvariant()
 Set-Content -Path ($installer.FullName + ".sha256") -Value "$hash  $($installer.Name)" -Encoding ascii
 Write-Host "Installateur créé : $($installer.FullName)"

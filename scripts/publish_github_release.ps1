@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "suceunq/Piece2STL",
-    [string]$Version = "0.3.0"
+    [string]$Version = "0.3.1"
 )
 
 $ErrorActionPreference = "Stop"
