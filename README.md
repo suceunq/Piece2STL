@@ -1,6 +1,6 @@
 # Piece2STL
 
-**Version 0.4.0 — photogrammétrie, IA locale gratuite et Meshy Cloud facultatif**
+**Version 0.4.1 — photogrammétrie, IA locale gratuite et Meshy Cloud facultatif**
 
 Piece2STL transforme une série de photos ou une courte vidéo d'un objet réel en
 maillage 3D calibré, contrôlé et exportable en STL/3MF. Les calculs restent sur
@@ -15,7 +15,7 @@ et avec la clé de l'utilisateur ; les autres modes restent entièrement locaux.
 
 ### Installateur Windows recommandé
 
-Lance `dist/installer/Piece2STL-Setup-0.4.0.exe`. L'assistant moderne installe
+Lance `dist/installer/Piece2STL-Setup-0.4.1.exe`. L'assistant moderne installe
 l'application sans droits administrateur, crée les raccourcis Bureau et Menu
 Démarrer et propose de lancer le logiciel à la fin. La version portable reste
 disponible dans `dist/Piece2STL/`.

@@ -464,6 +464,7 @@ class AIInstallWorker(QThread):
     def run(self) -> None:
         output_queue: queue.Queue[str | None] = queue.Queue()
         recent_lines: list[str] = []
+        structured_error: tuple[str, str] | None = None
         try:
             self.process = subprocess.Popen(
                 [
@@ -523,12 +524,24 @@ class AIInstallWorker(QThread):
                             percent = 0
                         self.progress_changed.emit(percent, parts[2], parts[3])
                     continue
+                if line.startswith("PIECE2STL_ERROR|"):
+                    parts = line.split("|", 2)
+                    if len(parts) == 3:
+                        structured_error = (parts[1], parts[2])
+                        self.log_line.emit(f"{parts[1]} : {parts[2]}")
+                    continue
                 recent_lines.append(line)
                 del recent_lines[:-20]
                 self.log_line.emit(line)
 
             return_code = self.process.wait()
             if return_code != 0:
+                if structured_error:
+                    raise RuntimeError(
+                        f"{structured_error[0]} : {structured_error[1]}\n\n"
+                        "Piece2STL a conservé le journal technique et pourra reprendre "
+                        "l’installation après correction."
+                    )
                 detail = "\n".join(recent_lines[-8:])
                 raise RuntimeError(
                     f"L’installateur IA s’est arrêté avec le code {return_code}."

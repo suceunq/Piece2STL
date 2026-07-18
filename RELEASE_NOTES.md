@@ -1,4 +1,17 @@
-# Piece2STL 0.4.0
+# Piece2STL 0.4.1
+
+## Correctif de l’installation IA Windows
+
+- contournement de l’erreur Windows 448 « point de montage non approuvé » ;
+- Python 3.12 est désormais téléchargé dans le dossier local de Piece2STL ;
+- sélection explicite du véritable dossier Python versionné, sans jonction `uv` ;
+- création du venv directement par Python afin que `pyvenv.cfg` ne référence
+  aucun alias ou point de montage ;
+- détection et suppression automatiques des environnements incomplets ;
+- seconde tentative automatique avec un runtime propre en cas d’échec ;
+- message d’erreur simplifié dans l’interface, avec détails conservés dans le journal.
+
+## Version 0.4.0
 
 ## Monitoring et unités
 

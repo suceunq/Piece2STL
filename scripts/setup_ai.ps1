@@ -1,12 +1,20 @@
 ﻿param(
     [ValidateSet("Auto", "AMD", "NVIDIA", "Intel", "CPU")]
     [string]$Backend = "Auto",
-    [switch]$Force
+    [switch]$Force,
+    [switch]$RuntimeOnly
 )
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 $OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+
+trap {
+    $technicalMessage = $_.Exception.Message
+    Write-Output ("PIECE2STL_ERROR|Installation IA interrompue|{0}" -f $technicalMessage.Replace("|", "/"))
+    [Console]::Error.WriteLine(($_ | Out-String))
+    exit 1
+}
 
 function Write-Piece2STLProgress {
     param(
@@ -37,9 +45,82 @@ $python = Join-Path $venv "Scripts\python.exe"
 $readyMarker = Join-Path $venv "piece2stl_ai_ready.json"
 $markerVersion = "2"
 $runtimeReady = $false
+$runtimeRoot = Join-Path $root ".ai-runtime"
+$runtimePythonDir = Join-Path $runtimeRoot "python"
+$env:UV_PYTHON_INSTALL_DIR = $runtimePythonDir
+$env:UV_CACHE_DIR = Join-Path $runtimeRoot "cache"
+
+function Test-Piece2STLPython {
+    param([string]$Executable)
+    if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) { return $false }
+    try {
+        & $Executable -c "import sys; assert sys.version_info[:2] == (3, 12)" *> $null
+        return ($LASTEXITCODE -eq 0)
+    }
+    catch {
+        # Un venv partiel ou fondé sur une jonction refusée doit être réparé,
+        # pas transformer le contrôle préalable en erreur fatale.
+        return $false
+    }
+}
+
+function Get-Piece2STLBasePython {
+    $installation = Get-ChildItem -LiteralPath $runtimePythonDir -Directory -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name -like "cpython-3.12.*-windows-x86_64-none" -and
+            -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -and
+            (Test-Path -LiteralPath (Join-Path $_.FullName "python.exe") -PathType Leaf)
+        } |
+        Sort-Object Name -Descending |
+        Select-Object -First 1
+    if (-not $installation) { return $null }
+    return (Join-Path $installation.FullName "python.exe")
+}
+
+function Install-Piece2STLPythonRuntime {
+    Write-Piece2STLProgress 12 "Création de l’environnement IA" "Installation isolée de Python 3.12 dans Piece2STL, sans utiliser les jonctions Python globales de Windows."
+    New-Item -ItemType Directory -Force -Path $runtimeRoot, $runtimePythonDir | Out-Null
+
+    & $uv python install 3.12 --install-dir $runtimePythonDir --no-bin
+    if ($LASTEXITCODE -ne 0) {
+        Write-Piece2STLProgress 13 "Réparation automatique du runtime" "La première préparation de Python a échoué. Piece2STL télécharge une copie propre et réessaie automatiquement."
+        & $uv python install 3.12 --install-dir $runtimePythonDir --no-bin --reinstall
+        if ($LASTEXITCODE -ne 0) { throw "Impossible d’installer le runtime Python 3.12 local." }
+    }
+
+    $basePython = Get-Piece2STLBasePython
+    if (-not $basePython) { throw "Le runtime Python local a été téléchargé, mais son exécutable réel est introuvable." }
+
+    if (Test-Path -LiteralPath $venv) {
+        Remove-Item -LiteralPath $venv -Recurse -Force
+    }
+    # Ne pas utiliser `uv venv` ici : sous Windows il peut réintroduire l’alias
+    # de version sous forme de jonction dans pyvenv.cfg (ERROR_UNTRUSTED_MOUNT_POINT 448).
+    & $basePython -m venv $venv
+    if ($LASTEXITCODE -ne 0) {
+        Write-Piece2STLProgress 14 "Nouvelle tentative de l’environnement IA" "Nettoyage de l’environnement incomplet puis nouvelle création avec le Python local vérifié."
+        if (Test-Path -LiteralPath $venv) { Remove-Item -LiteralPath $venv -Recurse -Force }
+        & $uv python install 3.12 --install-dir $runtimePythonDir --no-bin --reinstall
+        if ($LASTEXITCODE -ne 0) { throw "Réinstallation du runtime Python local échouée." }
+        $basePython = Get-Piece2STLBasePython
+        if (-not $basePython) { throw "Le runtime Python réparé reste introuvable." }
+        & $basePython -m venv $venv
+        if ($LASTEXITCODE -ne 0) { throw "Création de l’environnement IA échouée après la tentative de réparation." }
+    }
+    if (-not (Test-Piece2STLPython $python)) {
+        throw "L’environnement IA a été créé, mais Python 3.12 ne démarre pas correctement."
+    }
+}
 Write-Piece2STLProgress 5 "Détection du matériel" "Identification de la carte graphique afin de choisir automatiquement AMD ROCm, NVIDIA CUDA, Intel XPU ou le processeur."
-$gpuNames = @(Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name })
+try {
+    $gpuNames = @(Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name })
+}
+catch {
+    $gpuNames = @()
+    Write-Warning "La détection WMI du GPU n’est pas disponible. Le mode CPU de secours sera utilisé."
+}
 $gpuText = $gpuNames -join " | "
+if (-not $gpuText) { $gpuText = "Aucune carte détectée par Windows" }
 
 if ($Backend -eq "Auto") {
     if ($gpuText -match "NVIDIA|GeForce|Quadro") { $Backend = "NVIDIA" }
@@ -63,6 +144,13 @@ if (-not (Test-Path (Join-Path $aiDir "TripoSR\tsr"))) {
     New-Item -ItemType Directory -Force -Path $aiDir | Out-Null
     Move-Item -LiteralPath (Join-Path $extract "TripoSR-main") -Destination (Join-Path $aiDir "TripoSR")
 }
+if (-not (Test-Piece2STLPython $python)) {
+    Install-Piece2STLPythonRuntime
+}
+if ($RuntimeOnly) {
+    Write-Piece2STLProgress 100 "Runtime Python validé" "Python 3.12 a été installé localement sans traverser de jonction Windows."
+    exit 0
+}
 if ((Test-Path $readyMarker) -and (-not $Force)) {
     Write-Piece2STLProgress 35 "Vérification de l’installation existante" "Contrôle rapide du moteur déjà présent et du périphérique de calcul disponible."
     & $python (Join-Path $aiDir "triposr_worker.py") --probe
@@ -76,11 +164,6 @@ if ((Test-Path $readyMarker) -and (-not $Force)) {
         }
         Write-Piece2STLProgress 50 "Mise à niveau de la qualité IA" "Le moteur GPU existant est conservé. Ajout du détourage BiRefNet et des nouveaux réglages haute définition."
     }
-}
-if (-not (Test-Path $python)) {
-    Write-Piece2STLProgress 12 "Création de l’environnement IA" "Installation isolée de Python 3.12 afin de ne pas modifier les autres logiciels présents sur l’ordinateur."
-    & $uv venv $venv --python 3.12 --seed
-    if ($LASTEXITCODE -ne 0) { throw "Création de l'environnement IA échouée." }
 }
 
 if (-not $runtimeReady) {
